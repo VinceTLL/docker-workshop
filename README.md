@@ -81,6 +81,7 @@ WORKDIR /code -  the workdir we want to save the file
 COPY pipeline.py .  - we copy from the host system to the docker image
 
 Then we run the code below to build our docker image with teh name test:pandas
+
 docker build -t test:pandas . -> t is the tag we give to the image
 
 then we can run our docker image 
@@ -163,6 +164,7 @@ docker run -it --rm \
 -e POSTGRES_DB="ny_taxi" \
 -v ny_taxi_postgres_data:/var/lib/postgresql \
 -p 5432:5432 \
+postgres:18
 
 
 uv add --dev pgcli >- --dev will install the package as dev environment 
@@ -170,7 +172,133 @@ but it will not be copied in docker container, when we sincronize  the uv
 using sync --locked  as it sync only the main dependencies in our pyproject.tomail file
 pgcli is  pakcage to interact with postgres from command line
 
+
+----------------------------------------------------
+---- INTERACT DB INSIDE POSTGRESQL Container FROM CLI
+----------------------------------------------------
+
 uv run pgcli -h localhost -p 5432 -u root -d ny_taxi
 with this code we conenct to our postgres inside our container where we can perform SQL statments.
 
 
+--------------------------------------------------------------
+--- Tansforming jupyter notebook to script and paremtrize script
+-----------------------------------------------------------------
+
+
+this command -- uv run jupyter nbconvert --to=script notebook.ipynb 
+Will transform the jupyter notebook into a script
+
+code will be executed in command line as below 
+
+uv run python main.py \
+  --user=root \
+  --password=root \
+  --host=localhost \
+  --port=5432 \
+  --db=ny_taxi \
+  --table=yellow_taxi_trips \
+  --year=2021 \
+  --month=1 \
+  --cunksize=100000
+
+
+--------------------------------------------------------------------------
+-- DOCKERIZE Scrip and connect it with postgres:18 container-------------
+------------------------------------------------------------------------
+
+After we dockerized main.py and intest_data.py we create docker image
+docker build -t taxi_ingest:v001 .
+
+Once the docker image is built we can run docker container as below
+docker run -it taxi_ingest:v001
+
+Docker image taxi_ingest:v001 contains our data ingestion script.
+Once we create a docker container, it will execute the script and it will ingest data in our postgres docker container instance of image postgres:18
+
+ When attempting to connect to postgres:18 port, there will be a problem.
+ The localhost inside our container taxi_ingest:v001 is different than the localhost in our 
+ host machine.
+ We need to create a network in order to connect our container to postgres:18.
+
+ docker network create pg-network  -> we are creating a network called pg-network
+
+ Once we create the netweork we want to container postgres:18 and taxi_ingest:v001 inside the same network.
+
+ Things withing the same network can see eachother.
+
+running postgres:18 on pg-network
+
+--name pgdatabase is name of the host of the postgres:18 container, in the network pg-network in order to be discovered
+
+docker run -it --rm\
+  -e POSTGRES_USER="root" \
+  -e POSTGRES_PASSWORD="root" \
+  -e POSTGRES_DB="ny_taxi" \
+  -v ny_taxi_postgres_data:/var/lib/postgresql \
+  -p 5432:5432 \
+  --network=pg-network \
+  --name pgdatabase \ 
+  postgres:18
+
+
+docker run -it --rm -e POSTGRES_USER="root" -e POSTGRES_PASSWORD="root" -e POSTGRES_DB="ny_taxi" -v ny_taxi_postgres_data:/var/lib/postgresql  -p 5432:5432 --network=pg-network --name pgdatabase postgres:18
+
+To re run the same container pgdatabase with logs we can do 
+docker start -ai pgdatabase
+
+--host=pgdatabase, we changed it from localhost since we are now in the pg-network and 
+the name is pgdatabase
+
+docker run -it \
+  --network=pg-network \
+  taxi_ingest:v001 \
+    --user=root \
+    --password=root \
+    --host=pgdatabase \
+    --port=5432 \
+    --db=ny_taxi \
+    --target-table=yellow_taxi_trips \
+    --year=2021 \
+    --month=1 \
+    --chunksize=100000
+
+docker run -it --network=pg-network taxi_ingest:v001 --user=root --password=root --host=pgdatabase --port=5432 --db=ny_taxi --target_table=yellow_taxi_trips --year=2021 --month=1 --chunksize=100000
+
+-----------------------------------------------
+-- INTERCATING WITH POSTGRESQL DB FROM WEB----
+----------------------------------------------
+
+We gonna create a docker contanier from image pdage/pgadmin4.
+
+-v pgadmin_data:/var/lib/pgadmin -> volume mapping saves pgAdmin settings (server connections, preferences) so that we do not have to reconfigure it every time we restart the container.
+
+With this container we want to access the data inside container postgres:18
+
+docker run -it \
+-e PGADMIN_DEFAULT_EMAIL="  " \
+-e PGADMIN_DEFAULT_PASSWORD="root" \
+-v pgadmin_data:/var/lib/pgadmin \
+-p 8085:80 \
+--network=pg-network \
+--name pgadmin \
+dpage/pgadmin4
+
+
+------------------------------------
+--- DOCKER COMPOSE yaml FILE ------
+-----------------------------------
+
+If we want to run multiple container at the same time, we can create a docker compose yaml file
+ The file will contain all the docker containers we need to run.
+ By defult all docker containers in the same file are run inside the same network.
+
+ Therefore if we do not specify the name of the network inside deocker-compose.yaml,
+ when we run docker compose a default network is created in this format ->"foldername_default"
+
+When we run docker-compose.yaml for the first time, our tables are not saved.
+We need to re-run taxi_ingest:V001 container in order to create the tables and re-ingest the data.
+Before running tax_ingest:v001 we need to make sure we are using the correct network name,
+that is the one created by docker after running docker compose.
+
+docker run -it --rm --network=pipeline_pg-network taxi_ingest:v001 --user=root --password=root --host=pgdatabase --port=5432 --db=ny_taxi --target_table=yellow_taxi_trips --year=2021 --month=1 --chunksize=100000

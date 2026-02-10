@@ -1,6 +1,4 @@
-def main():
-    print("Hello from pipeline!")
-
+from ingest_data import run
 
 if __name__ == "__main__":
-    main()
+    run()

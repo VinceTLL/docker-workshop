@@ -4,7 +4,7 @@
 import pandas as pd
 from sqlalchemy import create_engine
 from tqdm.auto import tqdm # monitor progress of wrting data into POSTERDB
-
+import click
 
 dtype = {
     "VendorID": "Int64",
@@ -31,25 +31,36 @@ parse_dates = [
 ]
 
 
+###########################################################
+### Needed to pass parameters to script from command line
+#########################################################
+
+@click.command()
+@click.option('--user',default = 'root',help ='PostgreSQL user')
+@click.option("--password", default = 'root',help = 'PostgreSQL password')
+@click.option("--host", default = 'localhost',help = 'PostgreSQL host')
+@click.option("--db", default  = 'ny_taxi',help = 'PostgreSQL db')
+@click.option("--port", default = 5432,type = int,help = 'PostgreSQL port')
+@click.option("--year",  default= 2021,type=int, help = "Year of the data")
+@click.option("--month", default= 1,type=int, help = "Month of the data")
+@click.option("--target_table",default = "yellow_taxi_data_012021", help = "Target table name")
+@click.option("--chunksize",default =100000,type=int, help = "Number of rows of each chunk")
 
 
 ######################################################
 ### writing data in batch sizes in to postgres DB
 #####################################################
 
-def run():
-
-    
-    pg_user = 'root'
-    pg_password = 'root'
-    pg_host = 'localhost'
-    pg_db  = 'ny_taxi'
-    pg_port = 5432
-
-    year = 2021
-    month = 1
-
-    target_table = "yellow_taxi_data"
+def run(
+    user, 
+    password, 
+    host, 
+    db,  
+    port,
+    year,    
+    month,
+    target_table,
+    chunksize):
 
 
     prefix = "https://github.com/DataTalksClub/nyc-tlc-data/releases/download/yellow/"
@@ -60,7 +71,7 @@ def run():
     ##########################################################
     ###  CREATE ENGINE TO INTRACT WITH POSTGRES DB
     #######################################################
-    engine  = create_engine(f'postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}')
+    engine  = create_engine(f'postgresql://{user}:{password}@{host}:{port}/{db}')
     
     ##########
     #SCHEMA
@@ -68,8 +79,6 @@ def run():
 
     print(pd.io.sql.get_schema(df,name = target_table,con =engine))
  
-    
-    chunksize = 100000
 
     #create chuncks iterator
     df_iter  = pd.read_csv(url, dtype=dtype, parse_dates=parse_dates,iterator=True,chunksize = chunksize)
@@ -86,9 +95,4 @@ def run():
             chunk.head(0).to_sql(name= target_table, con=engine, if_exists='replace')
             first = False
         chunk.to_sql(name=target_table, con=engine, if_exists='append')
-
-
-if __name__== '__main__':
-
-    run()
 
