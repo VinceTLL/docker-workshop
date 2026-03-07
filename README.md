@@ -276,13 +276,30 @@ We gonna create a docker contanier from image pdage/pgadmin4.
 With this container we want to access the data inside container postgres:18
 
 docker run -it \
--e PGADMIN_DEFAULT_EMAIL="  " \
+-e PGADMIN_DEFAULT_EMAIL="admin@admin.com" \
 -e PGADMIN_DEFAULT_PASSWORD="root" \
 -v pgadmin_data:/var/lib/pgadmin \
 -p 8085:80 \
 --network=pg-network \
 --name pgadmin \
 dpage/pgadmin4
+
+
+
+Open browser and go to http://localhost:8085
+Login with email: admin@admin.com, password: root
+Right-click "Servers" → Register → Server
+Configure:
+General tab: Name: Local Docker
+Connection tab:
+Host: pgdatabase (the container name)
+Port: 5432
+Username: root
+Password: root
+Save
+Now you can explore the database using the pgAdmin interface!
+
+
 
 
 ------------------------------------
